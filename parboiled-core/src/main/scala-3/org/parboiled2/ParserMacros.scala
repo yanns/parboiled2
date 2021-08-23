@@ -18,16 +18,16 @@ package org.parboiled2
 
 import org.parboiled2.support.hlist.HList
 
-private[parboiled2] trait ParserMacroMethods {
+private[parboiled2] trait ParserMacroMethods { parser: Parser =>
 
   /** Converts a compile-time only rule definition into the corresponding rule method implementation.
     */
-  inline def rule[I <: HList, O <: HList](inline r: Rule[I, O]): Rule[I, O] = ${ ParserMacros.ruleImpl('r) }
+  inline def rule[I <: HList, O <: HList](inline r: Rule[I, O]): Rule[I, O] = ${ ParserMacros.ruleImpl('this, 'r) }
 
   /** Converts a compile-time only rule definition into the corresponding rule method implementation
     * with an explicitly given name.
     */
-  inline def namedRule[I <: HList, O <: HList](name: String)(inline r: Rule[I, O]): Rule[I, O] = ${ ParserMacros.nameRuleImpl('name)('r) }
+  inline def namedRule[I <: HList, O <: HList](name: String)(inline r: Rule[I, O]): Rule[I, O] = ${ ParserMacros.nameRuleImpl('name)('this, 'r) }
 }
 
 private[parboiled2] trait RuleRunnable {
@@ -52,11 +52,11 @@ object ParserMacros {
   //   }
   // }
 
-  def ruleImpl[I <: HList: Type, O <: HList: Type](r: Expr[Rule[I, O]])(using Quotes): Expr[Rule[I, O]] = {
-    nameRuleImpl(Expr("todo"))(r)
+  def ruleImpl[I <: HList: Type, O <: HList: Type](p: Expr[Parser], r: Expr[Rule[I, O]])(using Quotes): Expr[Rule[I, O]] = {
+    nameRuleImpl(Expr("todo"))(p, r)
   }
 
-  def nameRuleImpl[I <: HList : Type, O <: HList: Type](name: Expr[String])(r: Expr[Rule[I, O]])(using Quotes): Expr[Rule[I, O]] = {
+  def nameRuleImpl[I <: HList : Type, O <: HList: Type](name: Expr[String])(p: Expr[Parser], r: Expr[Rule[I, O]])(using Quotes): Expr[Rule[I, O]] = {
     import quotes.reflect.*
     val tthis = This
     val tthisType = ThisType
@@ -90,7 +90,7 @@ object ParserMacros {
     }
 
     '{
-      def wrapped: Boolean = ${opTree.render(wrapped = true)}
+      def wrapped: Boolean = ${opTree.render(p, wrapped = true)}
       val matched = wrapped
       if (matched) org.parboiled2.Rule.asInstanceOf[Rule[I, O]] else null
     }
@@ -102,17 +102,16 @@ object ParserMacros {
   }
 
   sealed trait OpTree {
-    def render(wrapped: Boolean)(using Quotes): Expr[Boolean]
+    def render(p: Expr[Parser], wrapped: Boolean)(using Quotes): Expr[Boolean]
   }
-  case class CharMatch(stringTree: Expr[Char]) extends OpTree {
-    override def render(wrapped: Boolean)(using Quotes): Expr[Boolean] =
-      '{
-        println("charmatch called")
-        true
-      }
+  case class CharMatch(charTree: Expr[Char]) extends OpTree {
+    override def render(p: Expr[Parser],wrapped: Boolean)(using Quotes): Expr[Boolean] = {
+      val unwrapped = '{ $p.cursorChar == $charTree && $p.__advance() }
+      if (wrapped) '{ $unwrapped && $p.__updateMaxCursor() || $p.__registerMismatch() } else unwrapped
+    }
   }
   case class StringMatch(stringTree: Expr[String]) extends OpTree {
-    override def render(wrapped: Boolean)(using Quotes): Expr[Boolean] =
+    override def render(p: Expr[Parser],wrapped: Boolean)(using Quotes): Expr[Boolean] =
       '{
         println("stringmatch called")
         true

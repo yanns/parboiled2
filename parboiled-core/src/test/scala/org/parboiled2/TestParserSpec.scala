@@ -63,7 +63,8 @@ abstract class TestParserSpec extends TestSuite {
     def parse(input: String): Either[ParseError, Out] = {
       this.input = input
       import Parser.DeliveryScheme.Either
-      targetRule.run()
+      // FIXME: get run macro to work and use targetRule.run(), instead
+      __run(targetRule)
     }
   }
 }
