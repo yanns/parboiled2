@@ -24,14 +24,18 @@ object ActionSpec extends TestParserSpec {
   val tests = Tests {
 
     "The Parser should correctly handle" - {
+      "`capture` simple" - new TestParser1[String] {
+        def targetRule = rule(capture('b'))
+        "b" must beMatchedWith("b")
+      }
 
-      "`capture`" - new TestParser1[String] {
+      /*"`capture`" - new TestParser1[String] {
         def targetRule = rule('a' ~ capture(zeroOrMore('b')) ~ EOI)
         "a" must beMatchedWith("")
         "b" must beMismatched
         "ab" must beMatchedWith("b")
         "abb" must beMatchedWith("bb")
-      }
+      }*/
 
       /*"`test`" - new TestParser0 {
         var flag       = true

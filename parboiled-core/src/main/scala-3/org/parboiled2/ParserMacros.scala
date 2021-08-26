@@ -152,36 +152,25 @@ class OpTreeContext(parser: Expr[Parser])(using Quotes) {
           true
         } else false
       }
-
-    /*
-      q"""
-      ${if (!wrapped) q"val start = cursor" else q"();"}
-      val matched = ${op.render(wrapped)}
-      if (matched) {
-        valueStack.push(input.sliceString(start, cursor))
-        true
-      } else false"""*/
   }
 
-  import support.hlist._
-  def deconstruct[I <: HList: Type, O <: HList: Type](rule: Expr[Rule[I, O]]): OpTree = rule match {
-    case '{
-          (${ lhs }: Rule[I, O])
-            .~((${ rhs }: Rule[I, O]))($c, $d)
-        } =>
-      Sequence(Seq(deconstruct(lhs), deconstruct(rhs)))
-    case '{ ($p: Parser).ch($c) }  => CharMatch(c)
-    case '{ ($p: Parser).str($s) } => StringMatch(s)
-    case '{ ($p: Parser).capture[HList, HList]($arg) /*${ arg: Rule[HList, HList] })*/ ($d) } =>
-      Capture(deconstruct(arg.asInstanceOf[Expr[Rule[Nothing, HList]]]))
-    //case q"$a.this.capture[$b, $c]($arg)($d)"              => Capture(OpTree(arg))
-    case x =>
-      import quotes.reflect.*
-      x.asTerm match {
-        case Apply(Select(_, "capture"), List()) => ???
-        case _                                   => reportError(s"Invalid rule definition: [${rule.asTerm}]", rule)
-      }
-    //case _ => reportError(s"Invalid rule definition: $rule.asTerm", rule)
+  def deconstruct(rule: Expr[Rule[_, _]]): OpTree = {
+    import quotes.reflect.*
+    def rec(rule: Term): OpTree = rule.asExprOf[Rule[_, _]] match {
+      case '{ ($p: Parser).ch($c) }  => CharMatch(c)
+      case '{ ($p: Parser).str($s) } => StringMatch(s)
+      case x                         =>
+        // These patterns cannot be parsed as quoted patterns because of the complicated type applies
+        x.asTerm.underlyingArgument match {
+          case Apply(Apply(TypeApply(Select(lhs, "~"), _), List(rhs)), _) =>
+            Sequence(Seq(rec(lhs), rec(rhs)))
+          case Apply(Apply(TypeApply(Select(_, "capture"), _), List(arg)), _) =>
+            Capture(rec(arg))
+          case _ => reportError(s"Invalid rule definition: [$x]", x)
+        }
+    }
+
+    rec(rule.asTerm)
   }
 
   private def reportError(error: String, expr: Expr[Any])(using quotes: Quotes): Nothing = {
