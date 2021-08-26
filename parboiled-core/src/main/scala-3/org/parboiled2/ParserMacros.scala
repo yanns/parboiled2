@@ -61,7 +61,7 @@ class OpTreeContext(parser: Expr[Parser])(using Quotes) {
 
     final def render(wrapped: Boolean)(using quotes: Quotes): Expr[Boolean] =
       if (wrapped) '{
-      try ${ renderInner(wrapped) } catch { case org.parboiled2.Parser.StartTracingException => $bubbleUp }
+        try ${ renderInner(wrapped) } catch { case org.parboiled2.Parser.StartTracingException => $bubbleUp }
       }
       else renderInner(wrapped)
 
@@ -72,7 +72,7 @@ class OpTreeContext(parser: Expr[Parser])(using Quotes) {
     def ruleTraceTerminal(using quotes: Quotes) = '{ org.parboiled2.RuleTrace.CharMatch($charTree) }
     override def renderInner(wrapped: Boolean)(using Quotes): Expr[Boolean] = {
       val unwrappedTree = '{
-      $parser.cursorChar == $charTree && $parser.__advance()
+        $parser.cursorChar == $charTree && $parser.__advance()
       }
       if (wrapped) '{ $unwrappedTree && $parser.__updateMaxCursor() || $parser.__registerMismatch() }
       else unwrappedTree
@@ -83,47 +83,47 @@ class OpTreeContext(parser: Expr[Parser])(using Quotes) {
     final private val autoExpandMaxStringLength = 8
 
     override def render(wrapped: Boolean)(using Quotes): Expr[Boolean] =
-    // TODO: add optimization for literal constant
-    // def unrollUnwrapped(s: String, ix: Int = 0): Tree =
-    //   if (ix < s.length) q"""
-    //     if (cursorChar == ${s charAt ix}) {
-    //       __advance()
-    //       ${unrollUnwrapped(s, ix + 1)}:Boolean
-    //     } else false"""
-    //   else q"true"
-    // def unrollWrapped(s: String, ix: Int = 0): Tree =
-    //   if (ix < s.length) {
-    //     val ch = s charAt ix
-    //     q"""if (cursorChar == $ch) {
-    //       __advance()
-    //       __updateMaxCursor()
-    //       ${unrollWrapped(s, ix + 1)}
-    //     } else {
-    //       try __registerMismatch()
-    //       catch {
-    //         case org.parboiled2.Parser.StartTracingException =>
-    //           import org.parboiled2.RuleTrace._
-    //           __bubbleUp(NonTerminal(StringMatch($stringTree), -$ix) :: Nil, CharMatch($ch))
-    //       }
-    //     }"""
-    //   } else q"true"
+      // TODO: add optimization for literal constant
+      // def unrollUnwrapped(s: String, ix: Int = 0): Tree =
+      //   if (ix < s.length) q"""
+      //     if (cursorChar == ${s charAt ix}) {
+      //       __advance()
+      //       ${unrollUnwrapped(s, ix + 1)}:Boolean
+      //     } else false"""
+      //   else q"true"
+      // def unrollWrapped(s: String, ix: Int = 0): Tree =
+      //   if (ix < s.length) {
+      //     val ch = s charAt ix
+      //     q"""if (cursorChar == $ch) {
+      //       __advance()
+      //       __updateMaxCursor()
+      //       ${unrollWrapped(s, ix + 1)}
+      //     } else {
+      //       try __registerMismatch()
+      //       catch {
+      //         case org.parboiled2.Parser.StartTracingException =>
+      //           import org.parboiled2.RuleTrace._
+      //           __bubbleUp(NonTerminal(StringMatch($stringTree), -$ix) :: Nil, CharMatch($ch))
+      //       }
+      //     }"""
+      //   } else q"true"
 
-    // stringTree match {
-    //   case Literal(Constant(s: String)) if s.length <= autoExpandMaxStringLength =>
-    //     if (s.isEmpty) q"true" else if (wrapped) unrollWrapped(s) else unrollUnwrapped(s)
-    //   case _ =>
-    //     if (wrapped) q"__matchStringWrapped($stringTree)"
-    //     else q"__matchString($stringTree)"
-    // }
+      // stringTree match {
+      //   case Literal(Constant(s: String)) if s.length <= autoExpandMaxStringLength =>
+      //     if (s.isEmpty) q"true" else if (wrapped) unrollWrapped(s) else unrollUnwrapped(s)
+      //   case _ =>
+      //     if (wrapped) q"__matchStringWrapped($stringTree)"
+      //     else q"__matchString($stringTree)"
+      // }
       if (wrapped) '{ $parser.__matchStringWrapped($stringTree) }
       else '{ $parser.__matchString($stringTree) }
   }
 
   def deconstruct[I <: HList: Type, O <: HList: Type](rule: Expr[Rule[I, O]]): OpTree = rule match {
     case '{
-  (${ lhs }: Rule[I, O])
-  .~((${ rhs }: Rule[I, O]))($c, $d)
-  } =>
+          (${ lhs }: Rule[I, O])
+            .~((${ rhs }: Rule[I, O]))($c, $d)
+        } =>
       Sequence(Seq(deconstruct(lhs), deconstruct(rhs)))
     case '{ ($p: Parser).ch($c) } =>
       CharMatch(c)
@@ -142,18 +142,19 @@ object ParserMacros {
   import scala.quoted._
   import scala.compiletime._
 
-  def ruleImpl[I <: HList: Type, O <: HList: Type](parser: Expr[Parser],r: Expr[Rule[I, O]])(using Quotes): Expr[Rule[I, O]] = {
+  def ruleImpl[I <: HList: Type, O <: HList: Type](parser: Expr[Parser], r: Expr[Rule[I, O]])(using
+      Quotes
+  ): Expr[Rule[I, O]] = {
     import quotes.reflect.*
     nameRuleImpl(parser, Expr(Symbol.spliceOwner.owner.name), r)
   }
 
-  def nameRuleImpl[I <: HList: Type, O <: HList: Type](
-      parser: Expr[Parser],
-      name: Expr[String],
-      r: Expr[Rule[I, O]])(using Quotes): Expr[Rule[I, O]] = {
+  def nameRuleImpl[I <: HList: Type, O <: HList: Type](parser: Expr[Parser], name: Expr[String], r: Expr[Rule[I, O]])(
+      using Quotes
+  ): Expr[Rule[I, O]] = {
     import quotes.reflect.*
 
-    val ctx = new OpTreeContext(parser)
+    val ctx    = new OpTreeContext(parser)
     val opTree = ctx.deconstruct(r)
 
     '{
