@@ -18,17 +18,17 @@ package org.parboiled2
 
 import org.parboiled2.support.hlist.HList
 
-private[parboiled2] trait ParserMacroMethods {
+private[parboiled2] trait ParserMacroMethods { parser: Parser =>
 
   /** Converts a compile-time only rule definition into the corresponding rule method implementation.
     */
-  inline def rule[I <: HList, O <: HList](inline r: Rule[I, O]): Rule[I, O] = ${ ParserMacros.ruleImpl('r) }
+  inline def rule[I <: HList, O <: HList](inline r: Rule[I, O]): Rule[I, O] = ${ ParserMacros.ruleImpl('parser, 'r) }
 
   /** Converts a compile-time only rule definition into the corresponding rule method implementation
     * with an explicitly given name.
     */
   inline def namedRule[I <: HList, O <: HList](name: String)(inline r: Rule[I, O]): Rule[I, O] = ${
-    ParserMacros.nameRuleImpl('name)('r)
+    ParserMacros.nameRuleImpl('parser, 'name, 'r)
   }
 
 }
@@ -42,55 +42,13 @@ private[parboiled2] trait RuleRunnable {
   }
 }
 
-object ParserMacros {
-  import scala.quoted._
-  import scala.compiletime._
-
-  def ruleImpl[I <: HList: Type, O <: HList: Type](r: Expr[Rule[I, O]])(using Quotes): Expr[Rule[I, O]] =
-    nameRuleImpl(Expr("todo"))(r)
-
-  def nameRuleImpl[I <: HList: Type, O <: HList: Type](
-      name: Expr[String]
-  )(r: Expr[Rule[I, O]])(using Quotes): Expr[Rule[I, O]] = {
-    import quotes.reflect.*
-
-    def opTreeF(rule: Expr[Rule[I, O]]): OpTree = rule match {
-      case '{
-            (${ lhs }: Rule[I, O])
-              .~((${ rhs }: Rule[I, O]))($c, $d)
-          } =>
-        Sequence(Seq(opTreeF(lhs), opTreeF(rhs)))
-      case '{ ($p: Parser).ch($c) } =>
-        CharMatch(p, c)
-      case '{ ($p: Parser).str($s) } =>
-        StringMatch(p, s)
-      case _ => reportError("Invalid rule definition", r)
-    }
-
-    val opTree: OpTree = opTreeF(r)
-
-    val parser = opTree.parser
-    '{
-      def wrapped: Boolean = ${ opTree.render(wrapped = true) }
-      val matched =
-        if ($parser.__inErrorAnalysis) wrapped
-        else ${ opTree.render(wrapped = false) }
-      if (matched) org.parboiled2.Rule.asInstanceOf[Rule[I, O]] else null
-    }
-  }
-
-  private def reportError(error: String, expr: Expr[Any])(using quotes: Quotes): Nothing = {
-    quotes.reflect.report.error(error, expr)
-    throw new Exception(error)
-  }
-
+import scala.quoted._
+class OpTreeContext(parser: Expr[Parser])(using Quotes) {
   sealed trait OpTree {
-    def parser: Expr[Parser]
     def render(wrapped: Boolean)(using Quotes): Expr[Boolean]
   }
 
   case class Sequence(ops: Seq[OpTree]) extends OpTree {
-    val parser = ops.head.parser
     override def render(wrapped: Boolean)(using Quotes): Expr[Boolean] =
       ops
         .map(_.render(wrapped))
@@ -103,61 +61,107 @@ object ParserMacros {
 
     final def render(wrapped: Boolean)(using quotes: Quotes): Expr[Boolean] =
       if (wrapped) '{
-        try ${ renderInner(wrapped) } catch { case org.parboiled2.Parser.StartTracingException => $bubbleUp }
+      try ${ renderInner(wrapped) } catch { case org.parboiled2.Parser.StartTracingException => $bubbleUp }
       }
       else renderInner(wrapped)
 
     protected def renderInner(wrapped: Boolean)(using Quotes): Expr[Boolean]
   }
 
-  case class CharMatch(parser: Expr[Parser], charTree: Expr[Char]) extends TerminalOpTree {
+  case class CharMatch(charTree: Expr[Char]) extends TerminalOpTree {
     def ruleTraceTerminal(using quotes: Quotes) = '{ org.parboiled2.RuleTrace.CharMatch($charTree) }
     override def renderInner(wrapped: Boolean)(using Quotes): Expr[Boolean] = {
       val unwrappedTree = '{
-        $parser.cursorChar == $charTree && $parser.__advance()
+      $parser.cursorChar == $charTree && $parser.__advance()
       }
       if (wrapped) '{ $unwrappedTree && $parser.__updateMaxCursor() || $parser.__registerMismatch() }
       else unwrappedTree
     }
   }
 
-  case class StringMatch(parser: Expr[Parser], stringTree: Expr[String]) extends OpTree {
+  case class StringMatch(stringTree: Expr[String]) extends OpTree {
     final private val autoExpandMaxStringLength = 8
 
     override def render(wrapped: Boolean)(using Quotes): Expr[Boolean] =
-      // TODO: add optimization for literal constant
-      // def unrollUnwrapped(s: String, ix: Int = 0): Tree =
-      //   if (ix < s.length) q"""
-      //     if (cursorChar == ${s charAt ix}) {
-      //       __advance()
-      //       ${unrollUnwrapped(s, ix + 1)}:Boolean
-      //     } else false"""
-      //   else q"true"
-      // def unrollWrapped(s: String, ix: Int = 0): Tree =
-      //   if (ix < s.length) {
-      //     val ch = s charAt ix
-      //     q"""if (cursorChar == $ch) {
-      //       __advance()
-      //       __updateMaxCursor()
-      //       ${unrollWrapped(s, ix + 1)}
-      //     } else {
-      //       try __registerMismatch()
-      //       catch {
-      //         case org.parboiled2.Parser.StartTracingException =>
-      //           import org.parboiled2.RuleTrace._
-      //           __bubbleUp(NonTerminal(StringMatch($stringTree), -$ix) :: Nil, CharMatch($ch))
-      //       }
-      //     }"""
-      //   } else q"true"
+    // TODO: add optimization for literal constant
+    // def unrollUnwrapped(s: String, ix: Int = 0): Tree =
+    //   if (ix < s.length) q"""
+    //     if (cursorChar == ${s charAt ix}) {
+    //       __advance()
+    //       ${unrollUnwrapped(s, ix + 1)}:Boolean
+    //     } else false"""
+    //   else q"true"
+    // def unrollWrapped(s: String, ix: Int = 0): Tree =
+    //   if (ix < s.length) {
+    //     val ch = s charAt ix
+    //     q"""if (cursorChar == $ch) {
+    //       __advance()
+    //       __updateMaxCursor()
+    //       ${unrollWrapped(s, ix + 1)}
+    //     } else {
+    //       try __registerMismatch()
+    //       catch {
+    //         case org.parboiled2.Parser.StartTracingException =>
+    //           import org.parboiled2.RuleTrace._
+    //           __bubbleUp(NonTerminal(StringMatch($stringTree), -$ix) :: Nil, CharMatch($ch))
+    //       }
+    //     }"""
+    //   } else q"true"
 
-      // stringTree match {
-      //   case Literal(Constant(s: String)) if s.length <= autoExpandMaxStringLength =>
-      //     if (s.isEmpty) q"true" else if (wrapped) unrollWrapped(s) else unrollUnwrapped(s)
-      //   case _ =>
-      //     if (wrapped) q"__matchStringWrapped($stringTree)"
-      //     else q"__matchString($stringTree)"
-      // }
+    // stringTree match {
+    //   case Literal(Constant(s: String)) if s.length <= autoExpandMaxStringLength =>
+    //     if (s.isEmpty) q"true" else if (wrapped) unrollWrapped(s) else unrollUnwrapped(s)
+    //   case _ =>
+    //     if (wrapped) q"__matchStringWrapped($stringTree)"
+    //     else q"__matchString($stringTree)"
+    // }
       if (wrapped) '{ $parser.__matchStringWrapped($stringTree) }
       else '{ $parser.__matchString($stringTree) }
+  }
+}
+
+object ParserMacros {
+  import scala.quoted._
+  import scala.compiletime._
+
+  def ruleImpl[I <: HList: Type, O <: HList: Type](parser: Expr[Parser],r: Expr[Rule[I, O]])(using Quotes): Expr[Rule[I, O]] =
+    nameRuleImpl(parser, Expr("todo"), r)
+
+  def nameRuleImpl[I <: HList: Type, O <: HList: Type](
+      parser: Expr[Parser],
+      name: Expr[String],
+      r: Expr[Rule[I, O]])(using Quotes): Expr[Rule[I, O]] = {
+    import quotes.reflect.*
+
+    val ctx = new OpTreeContext(parser)
+    import ctx.{OpTree, Sequence, CharMatch, StringMatch}
+
+    def opTreeF(rule: Expr[Rule[I, O]]): OpTree = rule match {
+      case '{
+            (${ lhs }: Rule[I, O])
+              .~((${ rhs }: Rule[I, O]))($c, $d)
+          } =>
+        ctx.Sequence(Seq(opTreeF(lhs), opTreeF(rhs)))
+      case '{ ($p: Parser).ch($c) } =>
+        ctx.CharMatch(c)
+      case '{ ($p: Parser).str($s) } =>
+        ctx.StringMatch(s)
+      case _ => reportError("Invalid rule definition", r)
+    }
+
+    val opTree: OpTree = opTreeF(r)
+
+    '{
+      def wrapped: Boolean = ${ opTree.render(wrapped = true) }
+      val matched =
+        if ($parser.__inErrorAnalysis) wrapped
+        else ${ opTree.render(wrapped = false) }
+      if (matched) org.parboiled2.Rule.asInstanceOf[Rule[I, O]] else null
+    }
+  }
+
+  private def reportError(error: String, expr: Expr[Any])(using quotes: Quotes): Nothing = {
+    quotes.reflect.report.error(error, expr)
+    throw new Exception(error)
   }
 }
