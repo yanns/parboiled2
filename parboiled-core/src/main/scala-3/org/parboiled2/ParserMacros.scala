@@ -154,6 +154,12 @@ class OpTreeContext(parser: Expr[Parser])(using Quotes) {
       }
   }
 
+  case object Unknown extends TerminalOpTree {
+    override def ruleTraceTerminal: Expr[RuleTrace.Terminal] = '{ RuleTrace.Fail("unknown rule") }
+
+    override protected def renderInner(wrapped: Boolean): Expr[Boolean] = Expr(false)
+  }
+
   def deconstruct(rule: Expr[Rule[_, _]]): OpTree = {
     import quotes.reflect.*
     def rec(rule: Term): OpTree = rule.asExprOf[Rule[_, _]] match {
@@ -166,7 +172,9 @@ class OpTreeContext(parser: Expr[Parser])(using Quotes) {
             Sequence(Seq(rec(lhs), rec(rhs)))
           case Apply(Apply(TypeApply(Select(_, "capture"), _), List(arg)), _) =>
             Capture(rec(arg))
-          case _ => reportError(s"Invalid rule definition: [$x]", x)
+          case _ =>
+            Unknown
+          //reportError(s"Invalid rule definition: [$x]", x)
         }
     }
 
