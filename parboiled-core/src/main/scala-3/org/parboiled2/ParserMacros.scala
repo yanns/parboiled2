@@ -142,8 +142,10 @@ object ParserMacros {
   import scala.quoted._
   import scala.compiletime._
 
-  def ruleImpl[I <: HList: Type, O <: HList: Type](parser: Expr[Parser],r: Expr[Rule[I, O]])(using Quotes): Expr[Rule[I, O]] =
-    nameRuleImpl(parser, Expr("todo"), r)
+  def ruleImpl[I <: HList: Type, O <: HList: Type](parser: Expr[Parser],r: Expr[Rule[I, O]])(using Quotes): Expr[Rule[I, O]] = {
+    import quotes.reflect.*
+    nameRuleImpl(parser, Expr(Symbol.spliceOwner.owner.name), r)
+  }
 
   def nameRuleImpl[I <: HList: Type, O <: HList: Type](
       parser: Expr[Parser],
