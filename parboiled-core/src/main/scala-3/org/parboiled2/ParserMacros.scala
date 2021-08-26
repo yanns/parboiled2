@@ -48,13 +48,6 @@ class OpTreeContext(parser: Expr[Parser])(using Quotes) {
     def render(wrapped: Boolean): Expr[Boolean]
   }
 
-  case class Sequence(ops: Seq[OpTree]) extends OpTree {
-    override def render(wrapped: Boolean): Expr[Boolean] =
-      ops
-        .map(_.render(wrapped))
-        .reduceLeft((l, r) => '{ val ll = $l; if (ll) $r else false })
-  }
-
   sealed abstract class TerminalOpTree extends OpTree {
     def bubbleUp: Expr[Nothing] = '{ $parser.__bubbleUp($ruleTraceTerminal) }
     def ruleTraceTerminal: Expr[RuleTrace.Terminal]
@@ -66,6 +59,13 @@ class OpTreeContext(parser: Expr[Parser])(using Quotes) {
       else renderInner(wrapped)
 
     protected def renderInner(wrapped: Boolean): Expr[Boolean]
+  }
+
+  case class Sequence(ops: Seq[OpTree]) extends OpTree {
+    override def render(wrapped: Boolean): Expr[Boolean] =
+      ops
+        .map(_.render(wrapped))
+        .reduceLeft((l, r) => '{ val ll = $l; if (ll) $r else false })
   }
 
   case class CharMatch(charTree: Expr[Char]) extends TerminalOpTree {
