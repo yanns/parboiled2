@@ -33,7 +33,7 @@ object ActionSpec extends TestParserSpec {
         "abb" must beMatchedWith("bb")
       }
 
-      "`test`" - new TestParser0 {
+      /*"`test`" - new TestParser0 {
         var flag       = true
         def targetRule = rule(test(flag))
         "x" must beMatched
@@ -198,7 +198,7 @@ object ActionSpec extends TestParserSpec {
         "ba" must beMatched
         "a" must beMismatched
         "b" must beMismatched
-      }*/
+      }*/*/
     }
   }
 }
