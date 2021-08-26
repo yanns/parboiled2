@@ -118,6 +118,24 @@ class OpTreeContext(parser: Expr[Parser])(using Quotes) {
       if (wrapped) '{ $parser.__matchStringWrapped($stringTree) }
       else '{ $parser.__matchString($stringTree) }
   }
+
+  def deconstruct[I <: HList: Type, O <: HList: Type](rule: Expr[Rule[I, O]]): OpTree = rule match {
+    case '{
+  (${ lhs }: Rule[I, O])
+  .~((${ rhs }: Rule[I, O]))($c, $d)
+  } =>
+      Sequence(Seq(deconstruct(lhs), deconstruct(rhs)))
+    case '{ ($p: Parser).ch($c) } =>
+      CharMatch(c)
+    case '{ ($p: Parser).str($s) } =>
+      StringMatch(s)
+    case _ => reportError("Invalid rule definition", rule)
+  }
+
+  private def reportError(error: String, expr: Expr[Any])(using quotes: Quotes): Nothing = {
+    quotes.reflect.report.error(error, expr)
+    throw new Exception(error)
+  }
 }
 
 object ParserMacros {
@@ -134,22 +152,7 @@ object ParserMacros {
     import quotes.reflect.*
 
     val ctx = new OpTreeContext(parser)
-    import ctx.{OpTree, Sequence, CharMatch, StringMatch}
-
-    def opTreeF(rule: Expr[Rule[I, O]]): OpTree = rule match {
-      case '{
-            (${ lhs }: Rule[I, O])
-              .~((${ rhs }: Rule[I, O]))($c, $d)
-          } =>
-        ctx.Sequence(Seq(opTreeF(lhs), opTreeF(rhs)))
-      case '{ ($p: Parser).ch($c) } =>
-        ctx.CharMatch(c)
-      case '{ ($p: Parser).str($s) } =>
-        ctx.StringMatch(s)
-      case _ => reportError("Invalid rule definition", r)
-    }
-
-    val opTree: OpTree = opTreeF(r)
+    val opTree = ctx.deconstruct(r)
 
     '{
       def wrapped: Boolean = ${ opTree.render(wrapped = true) }
@@ -158,10 +161,5 @@ object ParserMacros {
         else ${ opTree.render(wrapped = false) }
       if (matched) org.parboiled2.Rule.asInstanceOf[Rule[I, O]] else null
     }
-  }
-
-  private def reportError(error: String, expr: Expr[Any])(using quotes: Quotes): Nothing = {
-    quotes.reflect.report.error(error, expr)
-    throw new Exception(error)
   }
 }
