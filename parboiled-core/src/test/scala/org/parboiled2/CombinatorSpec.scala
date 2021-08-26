@@ -33,7 +33,7 @@ object CombinatorSpec extends TestParserSpec {
         "b" must beMismatched
       }
 
-      "`|` combinator" - new TestParser0 {
+      /*"`|` combinator" - new TestParser0 {
         def targetRule = rule(ch('a') | 'b')
         "" must beMismatched
         "a" must beMatched
@@ -261,7 +261,7 @@ object CombinatorSpec extends TestParserSpec {
         "ax" must beMismatched
         "axx" must beMatchedWith("axx")
         "axxx" must beMismatched
-      }
+      }*/
     }
   }
 }
